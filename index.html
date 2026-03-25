@@ -691,34 +691,69 @@ function AIChat({ data }) {
     const {days} = nextPayday(paydays);
     const daily = days>0?rem/days:0;
     const cs={};expenses.forEach(e=>{cs[e.category]=(cs[e.category]||0)+parseFloat(e.amount||0);});
-    return `User Financial Snapshot:\n- Income: $${totInc.toFixed(2)}\n- Expenses: $${totExp.toFixed(2)}\n- Planned: $${totPlan.toFixed(2)}\n- Remaining: $${rem.toFixed(2)}\n- Days to payday: ${days}\n- Daily budget: $${daily.toFixed(2)}\n- Category breakdown: ${JSON.stringify(cs)}\n- Upcoming: ${planned.map(p=>p.name+' $'+p.amount).join(', ')||'none'}`;
+    return `User Financial Snapshot:
+      - Total income: $${totInc.toFixed(2)}
+      - Total expenses: $${totExp.toFixed(2)}
+      - Planned expenses: $${totPlan.toFixed(2)}
+      - Remaining balance: $${rem.toFixed(2)}
+      - Days until next payday: ${days}
+      - Spending by category: ${JSON.stringify(cs)}
+      - Upcoming expenses: ${planned.map(p=>p.name+' $'+p.amount).join(', ')||'none'}`;
   };
 
   const fallback = q => {
-    const rem = data.income.reduce((s,i)=>s+parseFloat(i.amount||0),0) - data.expenses.reduce((s,e)=>s+parseFloat(e.amount||0),0) - data.planned.reduce((s,p)=>s+parseFloat(p.amount||0),0);
-    const {days} = nextPayday(data.paydays);
-    const daily = days>0?rem/days:0;
-    if (/today|spend|daily/.test(q.toLowerCase())) return `Your daily budget is ${fmt(daily)} with ${fmt(rem)} left. 💪`;
-    if (/afford/.test(q.toLowerCase())) return rem>200?`You have ${fmt(rem)} — looks okay!`:`Balance is ${fmt(rem)}, getting low. ⚠️`;
-    return `Balance: ${fmt(rem)} | Daily: ${fmt(daily)} | ${days} days to payday.`;
-  };
+  const rem =
+    data.income.reduce((s,i)=>s+parseFloat(i.amount||0),0)
+    - data.expenses.reduce((s,e)=>s+parseFloat(e.amount||0),0)
+    - data.planned.reduce((s,p)=>s+parseFloat(p.amount||0),0);
+
+  const { days } = nextPayday(data.paydays);
+  const daily = days > 0 ? rem / days : 0;
+
+  if (/today|spend|daily/.test(q.toLowerCase()))
+    return `You can spend about ${fmt(daily)} per day.`;
+
+  if (/afford/.test(q.toLowerCase()))
+    return rem > 200
+      ? `You’re okay — you still have ${fmt(rem)} left.`
+      : `That’s a bit tight. You only have ${fmt(rem)} remaining.`;
+
+  return `You have ${fmt(rem)} left with ${days} days until payday.`;
+};
 
   const send = async () => {
-    if (!inp.trim()||busy) return;
-    const q=inp.trim(); setInp('');
-    setMsgs(m=>[...m,{r:'u',t:q}]);
-    setBusy(true);
-    try {
-      const history=msgs.filter(m=>!m.ld).map(m=>({role:m.r==='a'?'assistant':'user',content:m.t}));
-      const res=await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`You are a friendly financial assistant for Flowo. Give short (under 90 words), practical, encouraging advice. No jargon. Use 1-2 emoji max.\n\n${ctx()}`,messages:[...history,{role:'user',content:q}]})
-      });
-      const d=await res.json();
-      setMsgs(m=>[...m,{r:'a',t:d.content?.[0]?.text||'Something went wrong. Try again!'}]);
-    } catch { setMsgs(m=>[...m,{r:'a',t:fallback(q)}]); }
-    setBusy(false);
-  };
+  if (!inp.trim() || busy) return;
+
+  const q = inp.trim();
+  setInp('');
+  setMsgs(m => [...m, { r: 'u', t: q }]);
+  setBusy(true);
+
+  try {
+    const prompt = `
+You are a smart, human-like financial assistant for a budgeting app called Flowo.
+
+Rules:
+- Only mention daily budget if user asks about daily spending
+- Do NOT repeat phrases like "Your daily budget is..."
+- Answer based on the question, not just the data
+- Be natural and helpful
+- Keep responses under 80 words
+
+${ctx()}
+
+User question: ${q}
+`;
+
+    const reply = await askGemini(prompt);
+
+    setMsgs(m => [...m, { r: 'a', t: reply }]);
+  } catch {
+    setMsgs(m => [...m, { r: 'a', t: fallback(q) }]);
+  }
+
+  setBusy(false);
+};
 
   const quick=['How much can I spend today?','Am I on track?','Where am I overspending?',"What's my daily budget?"];
 
