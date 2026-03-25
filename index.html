@@ -137,6 +137,24 @@ select.inp{appearance:none}
 <script>
 const { useState, useEffect, useRef } = React;
 
+// ── GEMINI AI ─────────────────────────────────────
+async function askGemini(prompt) {
+  try {
+    const res = await fetch("/api/gemini", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prompt }),
+    });
+
+    const data = await res.json();
+    return data.reply || "No response";
+  } catch {
+    return "Error connecting to AI";
+  }
+}
+
 // ── CREDENTIALS ───────────────────────────────────────────────────
 const SUPA_URL = 'https://zgljrbxvcwpxsllejauz.supabase.co';
 const SUPA_KEY = 'sb_publishable_wRgbnh9IKH04VYCOlP2cxQ_HYxje0oh';
