@@ -155,15 +155,11 @@ select.inp{appearance:none}
 <body>
 <div id="root"></div>
 <script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js');
-}
-</script>
 const { useState, useEffect, useRef } = React;
 
 // ── CONFIG (replace with your Supabase keys) ──────────────────────────────
-const SUPA_URL  = https://zgljrbxvcwpxsllejauz.supabase.co ;
-const SUPA_KEY  = sb_publishable_wRgbnh9IKH04VYCOlP2cxQ_HYxje0oh;
+const SUPA_URL  = 'https://YOUR_PROJECT.supabase.co';
+const SUPA_KEY  = 'YOUR_ANON_KEY';
 
 // ── LOCAL STORAGE DB ──────────────────────────────────────────────────────
 const DB = {
