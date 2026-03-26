@@ -388,8 +388,8 @@ function AuthScreen({onAuth}){
     setTimeout(()=>{DB.s('user',{id:'demo',email:em});onAuth({id:'demo',email:em})},400);
   };
   return e('div',{className:'auth-wrap'},
-    e('div',{className:'logo'},'Money',e('span',null,'Track')),
-    e('div',{className:'tagline'},'Your money, beautifully managed.'),
+    e('div',{className:'logo'},'Your',e('span',null,'Money')),
+    e('div',{className:'tagline'},'Beautiful solutions for smarter finance.'),
     e('div',{className:'auth-card'},
       e('div',{className:'tabs'},['login','signup'].map(t=>e('button',{key:t,className:'tab '+(tab===t?'on':''),onClick:()=>setTab(t)},t==='login'?'Sign In':'Sign Up'))),
       err&&e('div',{className:'err'},err),
