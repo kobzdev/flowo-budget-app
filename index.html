@@ -375,6 +375,65 @@ function PinModal({onSuccess,onCancel,mode}){
   );
 }
 
+/* ── SUPABASE CLIENT ─────────────────────────────────────── */
+// Config is loaded from /api/config (Vercel serverless function)
+// which reads your environment variables server-side — keys never exposed in HTML.
+let SUPA_URL = '';
+let SUPA_KEY = '';
+let configLoaded = false;
+let configError = false;
+
+async function loadConfig(){
+  if(configLoaded) return true;
+  try{
+    const r = await fetch('/api/config');
+    if(!r.ok) throw new Error('Config fetch failed');
+    const d = await r.json();
+    if(!d.supabaseUrl || !d.supabaseKey){
+      configError = true;
+      return false;
+    }
+    SUPA_URL = d.supabaseUrl;
+    SUPA_KEY = d.supabaseKey;
+    configLoaded = true;
+    return true;
+  } catch(e){
+    configError = true;
+    return false;
+  }
+}
+
+const supa={
+  headers:()=>({
+    'Content-Type':'application/json',
+    'apikey':SUPA_KEY,
+    'Authorization':'Bearer '+(DB.g('supa_token')||SUPA_KEY)
+  }),
+  async signUp(email,password){
+    await loadConfig();
+    const r=await fetch(`${SUPA_URL}/auth/v1/signup`,{
+      method:'POST',headers:this.headers(),
+      body:JSON.stringify({email,password})
+    });
+    return r.json();
+  },
+  async signIn(email,password){
+    await loadConfig();
+    const r=await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`,{
+      method:'POST',headers:this.headers(),
+      body:JSON.stringify({email,password})
+    });
+    return r.json();
+  },
+  async signOut(){
+    try{
+      await loadConfig();
+      await fetch(`${SUPA_URL}/auth/v1/logout`,{method:'POST',headers:this.headers()});
+    }catch(e){}
+    DB.s('supa_token',null);
+  }
+};
+
 /* ── AUTH SCREEN ─────────────────────────────────────────── */
 function AuthScreen({onAuth}){
   const[tab,setTab]=useState('login');
@@ -382,22 +441,91 @@ function AuthScreen({onAuth}){
   const[pw,setPw]=useState('');
   const[loading,setLoading]=useState(false);
   const[err,setErr]=useState('');
+  const[ok,setOk]=useState('');
+
   const go=async()=>{
-    if(!em||!pw){setErr('Please fill in all fields');return}
-    setLoading(true);setErr('');
-    setTimeout(()=>{DB.s('user',{id:'demo',email:em});onAuth({id:'demo',email:em})},400);
+    if(!em||!pw){setErr('Please fill in all fields.');return}
+    if(pw.length<6){setErr('Password must be at least 6 characters.');return}
+    setLoading(true);setErr('');setOk('');
+
+    // Load config from /api/config first
+    const ok2 = await loadConfig();
+    if(!ok2){
+      setLoading(false);
+      setErr('Could not connect to server. Make sure SUPABASE_URL and SUPABASE_ANON_KEY are set in your Vercel environment variables.');
+      return;
+    }
+
+    try{
+      if(tab==='login'){
+        const res=await supa.signIn(em,pw);
+        if(res.error||res.error_description||res.msg){
+          setErr(res.error_description||res.msg||res.error||'Incorrect email or password.');
+        } else if(res.access_token&&res.user){
+          DB.s('supa_token',res.access_token);
+          DB.s('user',{id:res.user.id,email:res.user.email});
+          onAuth({id:res.user.id,email:res.user.email});
+        } else {
+          setErr('Login failed. Please check your credentials.');
+        }
+      } else {
+        const res=await supa.signUp(em,pw);
+        if(res.error||res.error_description||res.msg){
+          setErr(res.error_description||res.msg||res.error||'Sign up failed. Try a different email.');
+        } else if(res.user||res.id){
+          // Some Supabase projects require email confirmation
+          const user=res.user||res;
+          if(user.confirmation_sent_at&&!user.confirmed_at){
+            setOk('Account created! Check your email to confirm, then sign in.');
+            setTab('login');
+          } else if(res.access_token){
+            DB.s('supa_token',res.access_token);
+            DB.s('user',{id:user.id,email:user.email});
+            onAuth({id:user.id,email:user.email});
+          } else {
+            setOk('Account created! Please sign in.');
+            setTab('login');
+          }
+        } else {
+          setErr('Sign up failed. Please try again.');
+        }
+      }
+    } catch(e){
+      setErr('Network error. Please check your internet connection.');
+    }
+    setLoading(false);
   };
+
   return e('div',{className:'auth-wrap'},
     e('div',{className:'logo'},'Your',e('span',null,'Money')),
     e('div',{className:'tagline'},'Beautiful solutions for smarter finance.'),
     e('div',{className:'auth-card'},
-      e('div',{className:'tabs'},['login','signup'].map(t=>e('button',{key:t,className:'tab '+(tab===t?'on':''),onClick:()=>setTab(t)},t==='login'?'Sign In':'Sign Up'))),
+      e('div',{className:'tabs'},['login','signup'].map(t=>
+        e('button',{key:t,className:'tab '+(tab===t?'on':''),onClick:()=>{setTab(t);setErr('');setOk('')}},
+          t==='login'?'Sign In':'Sign Up')
+      )),
+
       err&&e('div',{className:'err'},err),
-      e('div',{className:'fg'},e('label',{className:'lbl'},'Email'),e('input',{className:'inp',type:'email',placeholder:'you@email.com',value:em,onChange:v=>setEm(v.target.value),onKeyDown:v=>v.key==='Enter'&&go()})),
-      e('div',{className:'fg'},e('label',{className:'lbl'},'Password'),e('input',{className:'inp',type:'password',placeholder:'••••••••',value:pw,onChange:v=>setPw(v.target.value),onKeyDown:v=>v.key==='Enter'&&go()})),
-      e('button',{className:'btn',onClick:go,disabled:loading},loading?'Signing in…':tab==='login'?'Sign In':'Create Account'),
-      e('p',{style:{textAlign:'center',marginTop:12,fontSize:12,color:'#475569'}},'✦ Enter any email & password to start'),
-      e('p',{style:{textAlign:'center',marginTop:8,fontSize:11,color:'#374151',display:'flex',alignItems:'center',justifyContent:'center',gap:4}},
+      ok&&e('div',{className:'ok'},ok),
+      e('div',{className:'fg'},
+        e('label',{className:'lbl'},'Email'),
+        e('input',{className:'inp',type:'email',placeholder:'you@email.com',value:em,
+          onChange:v=>setEm(v.target.value),onKeyDown:v=>v.key==='Enter'&&go(),
+          autoComplete:'email'})
+      ),
+      e('div',{className:'fg'},
+        e('label',{className:'lbl'},'Password'),
+        e('input',{className:'inp',type:'password',placeholder:'••••••••',value:pw,
+          onChange:v=>setPw(v.target.value),onKeyDown:v=>v.key==='Enter'&&go(),
+          autoComplete:tab==='login'?'current-password':'new-password'})
+      ),
+      tab==='signup'&&e('div',{style:{fontSize:12,color:'var(--t3)',marginBottom:14,paddingLeft:2}},
+        'Password must be at least 6 characters.'
+      ),
+      e('button',{className:'btn',onClick:go,disabled:loading},
+        loading?(tab==='login'?'Signing in…':'Creating account…'):tab==='login'?'Sign In':'Create Account'
+      ),
+      e('div',{style:{textAlign:'center',marginTop:14,fontSize:11,color:'var(--t3)',display:'flex',alignItems:'center',justifyContent:'center',gap:4}},
         e('span',null,'🔒'),
         e('span',null,'Auto sign-out after 5 min inactivity')
       )
@@ -1055,7 +1183,13 @@ function SessionGuard({onLogout,children}){
 
 /* ── ROOT APP ────────────────────────────────────────────── */
 function App(){
-  const[user,setUser]=useState(()=>DB.g('user'));
+  // Restore session: if we have a saved token + user, skip login screen
+  const[user,setUser]=useState(()=>{
+    const u=DB.g('user');
+    const t=DB.g('supa_token');
+    // Only restore if both user record and token exist
+    return (u&&t)?u:null;
+  });
   const[tab,setTab]=useState('dashboard');
   const[showAdd,setShowAdd]=useState(false);
   const[offline,setOffline]=useState(!navigator.onLine);
@@ -1075,7 +1209,12 @@ function App(){
   },[]);
 
   const auth=u=>{DB.s('user',u);setUser(u)};
-  const logout=()=>{DB.s('user',null);setUser(null)};
+  const logout=async()=>{
+    await supa.signOut();
+    DB.s('user',null);
+    DB.s('supa_token',null);
+    setUser(null);
+  };
   const addItem=(type,item)=>{const k=type==='expense'?'expenses':type==='income'?'income':'planned';const l=DB.add(k,item);setData(d=>({...d,[k]:l}))};
   const delItem=(type,id)=>{const k=type==='expense'?'expenses':type==='income'?'income':'planned';const l=DB.del(k,id);setData(d=>({...d,[k]:l}))};
   const updPaydays=pds=>{DB.s('paydays',pds);setData(d=>({...d,paydays:pds}))};
