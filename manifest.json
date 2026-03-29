@@ -1,6 +1,6 @@
 {
-  "name": "Flowo Budget Tracker",
-  "short_name": "Flowo",
+  "name": "MyBudget — Budget Tracker",
+  "short_name": "MyBudget",
   "description": "Your personal budget tracker",
   "start_url": "/",
   "display": "standalone",
