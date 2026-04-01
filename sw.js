@@ -1,7 +1,6 @@
 // ── MyBudget Service Worker ──────────────────────────────────────
-const CACHE_NAME = 'mybudget-v1';
+const CACHE_NAME = 'mybudget-v2';
 
-// Files to cache for offline use
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -18,13 +17,9 @@ const STATIC_ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('MyBudget SW: Caching assets');
-        // Cache what we can, don't fail if some assets are unavailable
-        return Promise.allSettled(
-          STATIC_ASSETS.map(url => cache.add(url).catch(e => console.warn('Cache miss:', url, e)))
-        );
-      })
+      .then(cache => Promise.allSettled(
+        STATIC_ASSETS.map(url => cache.add(url).catch(e => console.warn('Cache miss:', url, e)))
+      ))
       .then(() => self.skipWaiting())
   );
 });
@@ -34,12 +29,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
-        keys
-          .filter(key => key !== CACHE_NAME)
-          .map(key => {
-            console.log('MyBudget SW: Deleting old cache:', key);
-            return caches.delete(key);
-          })
+        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
       )
     ).then(() => self.clients.claim())
   );
@@ -50,54 +40,31 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
   if (request.method !== 'GET') return;
-
-  // Skip Supabase API calls — always go to network for live data
   if (url.hostname.includes('supabase.co')) return;
 
-  // For HTML navigation — network first, then cache (always get latest app)
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then(response => {
-          // Cache the latest version
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
           return response;
         })
-        .catch(() => {
-          // Offline — serve cached index.html
-          return caches.match('/index.html') || caches.match('/');
-        })
+        .catch(() => caches.match('/index.html'))
     );
     return;
   }
 
-  // For everything else — cache first, then network
   event.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached;
-
       return fetch(request).then(response => {
-        // Only cache valid responses
-        if (!response || response.status !== 200 || response.type === 'opaque') {
-          return response;
-        }
+        if (!response || response.status !== 200 || response.type === 'opaque') return response;
         const clone = response.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         return response;
-      }).catch(() => {
-        // Return nothing if both cache and network fail
-        console.warn('MyBudget SW: Fetch failed for', request.url);
-      });
+      }).catch(() => console.warn('MyBudget SW: Fetch failed for', request.url));
     })
   );
-});
-
-// ── Background sync placeholder (for future offline queue) ────────
-self.addEventListener('sync', event => {
-  if (event.tag === 'sync-transactions') {
-    console.log('MyBudget SW: Background sync triggered');
-  }
 });
