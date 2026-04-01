@@ -228,6 +228,13 @@ select.inp{appearance:none}
 const { useState, useEffect, useRef, useMemo } = React;
 const e = React.createElement;
 
+// ── PWA INSTALL PROMPT ────────────────────────────────────────────
+let _installPrompt = null;
+window.addEventListener('beforeinstallprompt', ev => {
+  ev.preventDefault();
+  _installPrompt = ev;
+});
+
 // ── CREDENTIALS ───────────────────────────────────────────────────
 const SUPA_URL = 'https://zgljrbxvcwpxsllejauz.supabase.co';
 const SUPA_KEY = 'sb_publishable_wRgbnh9IKH04VYCOlP2cxQ_HYxje0oh';
@@ -693,6 +700,22 @@ function AuthScreen({ onAuth }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr]     = useState('');
   const [ok, setOk]       = useState('');
+  const [canInstall, setCanInstall] = useState(!!_installPrompt);
+  const [installed, setInstalled]   = useState(false);
+
+  useEffect(() => {
+    const handler = ev => { ev.preventDefault(); _installPrompt = ev; setCanInstall(true); };
+    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('appinstalled', () => { setInstalled(true); setCanInstall(false); });
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const installApp = async () => {
+    if (!_installPrompt) return;
+    _installPrompt.prompt();
+    const { outcome } = await _installPrompt.userChoice;
+    if (outcome === 'accepted') { setInstalled(true); setCanInstall(false); _installPrompt = null; }
+  };
 
   const switchTab = t => { setTab(t); setErr(''); setOk(''); };
 
@@ -893,7 +916,33 @@ function AuthScreen({ onAuth }) {
       e('p', { style:{textAlign:'center',marginTop:8,fontSize:11,color:'var(--t3)',display:'flex',alignItems:'center',justifyContent:'center',gap:4} },
         e('span', null, '🔒'), e('span', null, 'Auto sign-out after 5 min inactivity')
       )
-    )
+    ),
+    installed
+      ? e('div', { style:{marginTop:16,textAlign:'center',fontSize:13,color:'var(--acc)',fontWeight:600} }, '✅ App installed! Open it from your home screen.')
+      : canInstall && e('button', {
+          onClick: installApp,
+          style:{
+            marginTop:16,
+            width:'100%',
+            maxWidth:380,
+            background:'transparent',
+            border:'1px solid var(--acc)',
+            borderRadius:12,
+            padding:'12px 16px',
+            color:'var(--acc)',
+            fontSize:14,
+            fontWeight:600,
+            fontFamily:"'DM Sans',sans-serif",
+            cursor:'pointer',
+            display:'flex',
+            alignItems:'center',
+            justifyContent:'center',
+            gap:8
+          }
+        },
+        e('span', { style:{fontSize:20} }, '📲'),
+        e('span', null, 'Install App on your device')
+      )
   );
 }
 
